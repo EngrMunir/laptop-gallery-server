@@ -127,11 +127,24 @@ async function run() {
       res.send(result);
     })
 
+    // product related api
     app.get('/product', async(req,res)=>{
         const result = await productCollection.find().toArray();
         res.send(result);
     })
 
+    app.post('/product',verifyToken, verifyAdmin, async(req,res)=>{
+      const item = req.body;
+      const result = await productCollection.insertOne(item);
+      res.send(result);
+    })
+
+    app.delete('/product/:id',verifyToken,verifyAdmin, async(req,res)=>{
+      const id = req.params.id;
+      const query = {_id: new ObjectId(id)}
+      const result = await productCollection.deleteOne(query);
+      res.send(result);
+    })
     // cart related api
     app.get('/carts', async(req, res)=>{
       const email = req.query.email;
