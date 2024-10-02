@@ -9,7 +9,16 @@ const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId, Admin } = require('mongodb');
 
 // middleware
-app.use(cors());
+//Must remove "/" from your production URL
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://laptop-galary.web.app",
+      "https://laptop-galary.firebaseapp.com",
+    ]
+  })
+);
 app.use(express.json());
 
 
@@ -29,7 +38,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const userCollection = client.db('laptopDb').collection('users');
     const productCollection = client.db('laptopDb').collection('products');
@@ -263,9 +272,47 @@ async function run() {
 
       res.send({users, productItems, orders, revenue})
     })
+
+    // using aggregate pipeline
+    app.get('order-stats',verifyToken,verifyAdmin, async(req,res)=>{
+      const result = await paymentCollection.aggregate([
+        {
+          $unwind:'$productItemIds'
+        },
+        {
+          $lookup:{
+            from: 'products',
+            localField:'productItemIds',
+            foreignField:'_id',
+            as:'productItems'
+          }
+        },
+        {
+          $unwind:'$productItems'
+        },{
+          $group:{
+            _id:'$menuItems.brand',
+            quantity:{
+              $sum:1
+            },
+            revenue:{$sum:'$productItems.price'}
+          }
+        },
+        {
+          $project:{
+            _id:0,
+            brand:'$_id',
+            quantity:'$quantity',
+            revenue:'$revenue'
+          }
+        }
+      ]).toArray();
+
+      res.send(result)
+    })
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // await client.db("admin").command({ ping: 1 });
+    // console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
