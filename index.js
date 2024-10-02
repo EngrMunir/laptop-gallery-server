@@ -3,6 +3,8 @@ const app = express();
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 require('dotenv').config()
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId, Admin } = require('mongodb');
 
@@ -33,6 +35,7 @@ async function run() {
     const productCollection = client.db('laptopDb').collection('products');
     const reviewCollection = client.db('laptopDb').collection('reviews');
     const cartCollection = client.db('laptopDb').collection('carts');
+    const paymentCollection = client.db('laptopDb').collection('payments');
 
     // jwt related api
     app.post('/jwt', async(req,res)=>{
@@ -133,9 +136,42 @@ async function run() {
         res.send(result);
     })
 
+    app.get('/product/:id', async(req,res)=>{
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await productCollection.findOne(query);
+      res.send(result);
+    })
+
     app.post('/product',verifyToken, verifyAdmin, async(req,res)=>{
       const item = req.body;
       const result = await productCollection.insertOne(item);
+      res.send(result);
+    })
+
+    app.patch('/product/:id',async(req, res)=>{
+      const item = req.body;
+      const id = req.params.id;
+      const filter ={_id: new ObjectId(id)}
+      const updatedDoc ={
+        $set:{
+              name:item.name,
+              price: item.price,
+              processor: item.processor,
+              ram: item.ram,
+              storage:item.storage,
+              graphicsCard:item.graphicsCard,
+              display: item.display,
+              operatingSystem:item.operatingSystem,
+              brand: item.brand,
+              batteryLife:item.batteryLife,
+              weight:item.weight,
+              description: item.description,
+              category:item.category,
+              image: item.image
+        }
+      }
+      const result = await productCollection.updateOne(filter, updatedDoc);
       res.send(result);
     })
 
@@ -168,6 +204,40 @@ async function run() {
         res.send(result);
     })
 
+    // payment related api
+    app.post('/create-payment-intent',async(req,res) =>{
+      const { price } = req.body;
+      const amount = parseInt(price*100);
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency:'usd',
+        payment_method_types:['card']
+      });
+      res.send({
+        clientSecret: paymentIntent.client_secret
+      })
+    })
+
+    app.get('/payments/:email', async(req,res)=>{
+      const query ={ email: req.params.email }
+      if(req.params.email !== req.decoded.email){
+          return res.status(403).send({message:'forbidden access'})
+      }
+      const result = await paymentCollection.find(query).toArray();
+      res.send(result)
+    })
+    app.post('/payments', async(req, res)=>{
+      const payment= req.body;
+      const paymentResult = await paymentCollection.insertOne(payment);
+      // delete item from the cart
+      const query ={_id:{
+        $in:payment.cartIds.map(id => new ObjectId(id))
+      }}
+
+      const deleteResult = await cartCollection.deleteMany(query);
+      res.send({paymentResult, deleteResult});
+    })
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
